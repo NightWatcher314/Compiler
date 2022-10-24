@@ -2,13 +2,13 @@ package cn.edu.hitsz.compiler.parser;
 
 import cn.edu.hitsz.compiler.NotImplementedException;
 import cn.edu.hitsz.compiler.lexer.Token;
-import cn.edu.hitsz.compiler.parser.table.LRTable;
-import cn.edu.hitsz.compiler.parser.table.Production;
-import cn.edu.hitsz.compiler.parser.table.Status;
+import cn.edu.hitsz.compiler.parser.table.*;
 import cn.edu.hitsz.compiler.symtab.SymbolTable;
 
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Stack;
 
 //TODO: 实验二: 实现 LR 语法分析驱动程序
 
@@ -23,7 +23,8 @@ import java.util.List;
 public class SyntaxAnalyzer {
     private final SymbolTable symbolTable;
     private final List<ActionObserver> observers = new ArrayList<>();
-
+    private Iterator<Token> tokenIterator;
+    private LRTable lrTable;
 
     public SyntaxAnalyzer(SymbolTable symbolTable) {
         this.symbolTable = symbolTable;
@@ -75,18 +76,11 @@ public class SyntaxAnalyzer {
     }
 
     public void loadTokens(Iterable<Token> tokens) {
-        // TODO: 加载词法单元
-        // 你可以自行选择要如何存储词法单元, 譬如使用迭代器, 或是栈, 或是干脆使用一个 list 全存起来
-        // 需要注意的是, 在实现驱动程序的过程中, 你会需要面对只读取一个 token 而不能消耗它的情况,
-        // 在自行设计的时候请加以考虑此种情况
-        throw new NotImplementedException();
+        this.tokenIterator = tokens.iterator();
     }
 
     public void loadLRTable(LRTable table) {
-        // TODO: 加载 LR 分析表
-        // 你可以自行选择要如何使用该表格:
-        // 是直接对 LRTable 调用 getAction/getGoto, 抑或是直接将 initStatus 存起来使用
-        throw new NotImplementedException();
+        this.lrTable = table;
     }
 
     public void run() {
@@ -94,6 +88,42 @@ public class SyntaxAnalyzer {
         // 你需要根据上面的输入来实现 LR 语法分析的驱动程序
         // 请分别在遇到 Shift, Reduce, Accept 的时候调用上面的 callWhenInShift, callWhenInReduce, callWhenInAccept
         // 否则用于为实验二打分的产生式输出可能不会正常工作
-        throw new NotImplementedException();
+        Stack<Symbol> symbols = new Stack<>();
+        Stack<Status> statuses = new Stack<>();
+        Token token = tokenIterator.next();
+        statuses.push(lrTable.getInit());
+
+        while (token != null) {
+            Symbol symbol = new Symbol(token);
+            Status current_status = statuses.peek();
+            Action action = lrTable.getAction(current_status, token);
+            Action.ActionKind actionKind = action.getKind();
+            if (actionKind.equals(Action.ActionKind.Shift)) {
+                final var shiftTo = action.getStatus();
+                callWhenInShift(current_status, token);
+                statuses.push(shiftTo);
+                symbols.push(symbol);
+                if (tokenIterator.hasNext()) {
+                    token = tokenIterator.next();
+                } else {
+                    throw new RuntimeException("SyntaxAnalyzer Error!!!");
+                }
+            } else if (actionKind.equals(Action.ActionKind.Reduce)) {
+                final var production = action.getProduction();
+                callWhenInReduce(current_status, production);
+                for (int i = 0; i < production.body().size(); i++) {
+                    symbols.pop();
+                    statuses.pop();
+                }
+                symbols.push(new Symbol(production.head()));
+                statuses.push(lrTable.getGoto(statuses.peek(), production.head()));
+            } else if (actionKind.equals(Action.ActionKind.Accept)) {
+                callWhenInAccept(current_status);
+                token = null;
+            } else if (actionKind.equals(Action.ActionKind.Error)) {
+                throw new RuntimeException("SyntaxAnalyzer Error!!!");
+            }
+
+        }
     }
 }
