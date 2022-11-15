@@ -16,7 +16,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Stack;
 
-// TODO: 实验三: 实现 IR 生成
 
 /**
  *
@@ -122,7 +121,6 @@ public class IRGenerator implements ActionObserver {
     }
 
     public List<Instruction> getIR() {
-        // TODO
         return instructionList;
     }
 

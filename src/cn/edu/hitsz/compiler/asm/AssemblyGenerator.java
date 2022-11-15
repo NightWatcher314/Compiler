@@ -1,8 +1,11 @@
 package cn.edu.hitsz.compiler.asm;
 
-import cn.edu.hitsz.compiler.NotImplementedException;
+import cn.edu.hitsz.compiler.ir.IRImmediate;
 import cn.edu.hitsz.compiler.ir.Instruction;
+import cn.edu.hitsz.compiler.ir.InstructionKind;
+import cn.edu.hitsz.compiler.utils.FileUtils;
 
+import java.util.ArrayList;
 import java.util.List;
 
 
@@ -18,9 +21,17 @@ import java.util.List;
  * <br>
  * 为保证实现上的自由, 框架中并未对后端提供基建, 在具体实现时可自行设计相关数据结构.
  *
+ * @author night
  * @see AssemblyGenerator#run() 代码生成与寄存器分配
  */
 public class AssemblyGenerator {
+
+    private List<Instruction> instructionList = new ArrayList<>();
+    private List<Instruction> instructionListPre = new ArrayList<>();
+
+    private List<String> assemblyList = new ArrayList<>();
+    private AssemblyMap assemblyMap = new AssemblyMap();
+
 
     /**
      * 加载前端提供的中间代码
@@ -31,10 +42,62 @@ public class AssemblyGenerator {
      * @param originInstructions 前端提供的中间代码
      */
     public void loadIR(List<Instruction> originInstructions) {
-        // TODO: 读入前端提供的中间代码并生成所需要的信息
-//        throw new NotImplementedException();
+        this.instructionListPre = originInstructions;
     }
 
+
+    public void generate() {
+        assemblyMap.setCnt(0);
+        assemblyMap.setInstructionList(instructionList);
+        for (Instruction instruction : instructionList) {
+            switch (instruction.getKind()) {
+                case MOV -> {
+                    if (instruction.getFrom().isImmediate()) {
+                        int reg = assemblyMap.getReg();
+                        String variable = instruction.getResult().toString();
+                        assemblyList.add("    " + "li " + "t" + reg + ", " + instruction.getFrom() + "\t\t" + "#" + "  " + instruction);
+                        assemblyMap.replace(reg, variable);
+                    }
+                    if (instruction.getFrom().isIRVariable()) {
+                        String variable1 = instruction.getResult().toString();
+                        String variable2 = instruction.getFrom().toString();
+                        int reg1 = assemblyMap.getByValue(variable1);
+                        int reg2 = assemblyMap.getByValue(variable2);
+                        assemblyList.add("    " + "mv " + "t" + reg1 + ", " + "t" + reg2 + "\t\t" + "#" + "  " + instruction);
+                        assemblyMap.replace(reg1, variable1);
+                    }
+                }
+
+                case SUB, MUL, ADD -> {
+                    String variable1 = instruction.getResult().toString();
+                    String variable2 = instruction.getLHS().toString();
+                    String variable3 = instruction.getRHS().toString();
+                    int reg1 = assemblyMap.getByValue(variable1);
+                    int reg2 = assemblyMap.getByValue(variable2);
+                    int reg3 = assemblyMap.getByValue(variable3);
+                    String type = (instruction.getKind() == InstructionKind.SUB) ? "sub" : (instruction.getKind() == InstructionKind.ADD ? "add" : "mul");
+                    if (type.equals("add")) {
+                        if (instruction.getRHS().isImmediate()) {
+                            assemblyList.add("    " + "addi " + "t" + reg1 + ", " + "t" + reg2 + ", " + instruction.getRHS() + "\t\t" + "#" + "  " + instruction);
+                        }
+                        if (instruction.getRHS().isIRVariable()) {
+                            assemblyList.add("    " + "add " + "t" + reg1 + ", " + "t" + reg2 + ", " + "t" + reg3 + "\t\t" + "#" + "  " + instruction);
+                        }
+                    } else {
+                        assemblyList.add("    " + type + " t" + reg1 + ", " + "t" + reg2 + ", " + "t" + reg3 + "\t\t" + "#" + "  " + instruction);
+                    }
+                    assemblyMap.replace(reg1, variable1);
+                }
+
+                case RET -> {
+                    String variable = instruction.getReturnValue().toString();
+                    int reg = assemblyMap.getByValue(variable);
+                    assemblyList.add("    " + "mv " + "a0" + ", " + "t" + reg + "\t\t" + "#" + "  " + instruction);
+                }
+            }
+            assemblyMap.setCnt(assemblyMap.getCnt() + 1);
+        }
+    }
 
     /**
      * 执行代码生成.
@@ -47,7 +110,76 @@ public class AssemblyGenerator {
      */
     public void run() {
         // TODO: 执行寄存器分配与代码生成
-//        throw new NotImplementedException();
+        assemblyList.add(".text");
+        // 预处理
+        for (Instruction instruction : instructionListPre) {
+            switch (instruction.getKind()) {
+                case MOV, RET -> {
+                    instructionList.add(instruction);
+                }
+                case ADD -> {
+                    if (instruction.getLHS().isImmediate() && instruction.getRHS().isImmediate()) {
+                        int LHS = Integer.parseInt(instruction.getLHS().toString());
+                        int RHS = Integer.parseInt(instruction.getRHS().toString());
+                        instructionList.add(Instruction.createMov(instruction.getResult(), IRImmediate.of(LHS + RHS)));
+                    } else if (instruction.getLHS().isImmediate()) {
+                        instructionList.add(Instruction.createAdd(instruction.getResult(), instruction.getRHS(), instruction.getLHS()));
+                    } else {
+                        instructionList.add(instruction);
+                    }
+                }
+                case SUB -> {
+                    if (instruction.getLHS().isImmediate() && instruction.getRHS().isImmediate()) {
+                        int LHS = Integer.parseInt(instruction.getLHS().toString());
+                        int RHS = Integer.parseInt(instruction.getRHS().toString());
+                        instructionList.add(Instruction.createMov(instruction.getResult(), IRImmediate.of(LHS - RHS)));
+                    } else if (instruction.getLHS().isImmediate()) {
+                        Instruction instruction1 = Instruction.createMov(instruction.getResult(), instruction.getLHS());
+                        Instruction instruction2 = Instruction.createSub(instruction.getResult(), instruction1.getResult(), instruction.getRHS());
+                        instructionList.add(instruction1);
+                        instructionList.add(instruction2);
+
+                        assemblyMap.setCnt(assemblyMap.getCnt() + 1);
+                    } else if (instruction.getRHS().isImmediate()) {
+                        Instruction instruction1 = Instruction.createMov(instruction.getResult(), instruction.getRHS());
+                        Instruction instruction2 = Instruction.createSub(instruction1.getResult(), instruction.getLHS(), instruction1.getResult());
+                        instructionList.add(instruction1);
+                        instructionList.add(instruction2);
+
+                        assemblyMap.setCnt(assemblyMap.getCnt() + 1);
+                    } else {
+                        instructionList.add(instruction);
+                    }
+                }
+                case MUL -> {
+                    if (instruction.getLHS().isImmediate() && instruction.getRHS().isImmediate()) {
+                        int LHS = Integer.parseInt(instruction.getLHS().toString());
+                        int RHS = Integer.parseInt(instruction.getRHS().toString());
+                        instructionList.add(Instruction.createMov(instruction.getResult(), IRImmediate.of(LHS * RHS)));
+                    } else if (instruction.getLHS().isImmediate()) {
+                        Instruction instruction1 = Instruction.createMov(instruction.getResult(), instruction.getLHS());
+                        Instruction instruction2 = Instruction.createMul(instruction.getResult(), instruction1.getResult(), instruction.getRHS());
+                        instructionList.add(instruction1);
+                        instructionList.add(instruction2);
+
+                        assemblyMap.setCnt(assemblyMap.getCnt() + 1);
+                    } else if (instruction.getRHS().isImmediate()) {
+                        Instruction instruction1 = Instruction.createMov(instruction.getResult(), instruction.getRHS());
+                        Instruction instruction2 = Instruction.createMul(instruction1.getResult(), instruction.getLHS(), instruction1.getResult());
+                        instructionList.add(instruction1);
+                        instructionList.add(instruction2);
+
+                        assemblyMap.setCnt(assemblyMap.getCnt() + 1);
+                    } else {
+                        instructionList.add(instruction);
+                    }
+                }
+            }
+            assemblyMap.setCnt(assemblyMap.getCnt() + 1);
+        }
+
+        generate();
+
     }
 
 
@@ -57,8 +189,7 @@ public class AssemblyGenerator {
      * @param path 输出文件路径
      */
     public void dump(String path) {
-        // TODO: 输出汇编代码到文件
-//        throw new NotImplementedException();
+        FileUtils.writeLines(path, assemblyList.stream().toList());
     }
 }
 
