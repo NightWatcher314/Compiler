@@ -48,34 +48,26 @@ public class AssemblyMap {
     }
 
     public int getReg() {
-
         for (int i = 0; i < regFlag.length; i++) {
             if (!regFlag[i]) {
                 regFlag[i] = true;
                 return i;
             }
         }
-
         boolean flag = false;
         for (int i = 0; i <= regFlag.length; i++) {
             String value = getByKey(i);
             for (int j = cnt; j < instructionList.size() - 1; j++) {
                 switch (instructionList.get(j).getKind()) {
-                    case MOV -> {
-                        if (value.equals(instructionList.get(j).getFrom().toString())) {
-                            flag = true;
-                        }
-                    }
                     case ADD, SUB, MUL -> {
-                        if (value.equals(instructionList.get(j).getRHS().toString())
-                                || value.equals(instructionList.get(j).getLHS().toString())) {
-                            flag = true;
-                        }
+                        flag = value.equals(instructionList.get(j).getRHS().toString()) || value.equals(instructionList.get(j).getLHS().toString());
+
+                    }
+                    case MOV -> {
+                        flag = value.equals(instructionList.get(j).getFrom().toString());
                     }
                     case RET -> {
-                        if (value.equals(instructionList.get(j).getReturnValue())) {
-                            flag = true;
-                        }
+                        instructionList.get(j).getReturnValue();
                     }
                 }
                 if (flag) {

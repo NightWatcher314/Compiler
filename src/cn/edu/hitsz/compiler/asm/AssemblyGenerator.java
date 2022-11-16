@@ -51,23 +51,6 @@ public class AssemblyGenerator {
         assemblyMap.setInstructionList(instructionList);
         for (Instruction instruction : instructionList) {
             switch (instruction.getKind()) {
-                case MOV -> {
-                    if (instruction.getFrom().isImmediate()) {
-                        int reg = assemblyMap.getReg();
-                        String variable = instruction.getResult().toString();
-                        assemblyList.add("    " + "li " + "t" + reg + ", " + instruction.getFrom() + "\t\t" + "#" + "  " + instruction);
-                        assemblyMap.replace(reg, variable);
-                    }
-                    if (instruction.getFrom().isIRVariable()) {
-                        String variable1 = instruction.getResult().toString();
-                        String variable2 = instruction.getFrom().toString();
-                        int reg1 = assemblyMap.getByValue(variable1);
-                        int reg2 = assemblyMap.getByValue(variable2);
-                        assemblyList.add("    " + "mv " + "t" + reg1 + ", " + "t" + reg2 + "\t\t" + "#" + "  " + instruction);
-                        assemblyMap.replace(reg1, variable1);
-                    }
-                }
-
                 case SUB, MUL, ADD -> {
                     String variable1 = instruction.getResult().toString();
                     String variable2 = instruction.getLHS().toString();
@@ -88,7 +71,22 @@ public class AssemblyGenerator {
                     }
                     assemblyMap.replace(reg1, variable1);
                 }
-
+                case MOV -> {
+                    if (instruction.getFrom().isImmediate()) {
+                        int reg = assemblyMap.getReg();
+                        String variable = instruction.getResult().toString();
+                        assemblyList.add("    " + "li " + "t" + reg + ", " + instruction.getFrom() + "\t\t" + "#" + "  " + instruction);
+                        assemblyMap.replace(reg, variable);
+                    }
+                    if (instruction.getFrom().isIRVariable()) {
+                        String variable1 = instruction.getResult().toString();
+                        String variable2 = instruction.getFrom().toString();
+                        int reg1 = assemblyMap.getByValue(variable1);
+                        int reg2 = assemblyMap.getByValue(variable2);
+                        assemblyList.add("    " + "mv " + "t" + reg1 + ", " + "t" + reg2 + "\t\t" + "#" + "  " + instruction);
+                        assemblyMap.replace(reg1, variable1);
+                    }
+                }
                 case RET -> {
                     String variable = instruction.getReturnValue().toString();
                     int reg = assemblyMap.getByValue(variable);
@@ -117,6 +115,27 @@ public class AssemblyGenerator {
                 case MOV, RET -> {
                     instructionList.add(instruction);
                 }
+                case MUL -> {
+                    if (instruction.getLHS().isImmediate() && instruction.getRHS().isImmediate()) {
+                        int LHS = Integer.parseInt(instruction.getLHS().toString());
+                        int RHS = Integer.parseInt(instruction.getRHS().toString());
+                        instructionList.add(Instruction.createMov(instruction.getResult(), IRImmediate.of(LHS * RHS)));
+                    } else if (instruction.getLHS().isImmediate()) {
+                        Instruction instruction1 = Instruction.createMov(instruction.getResult(), instruction.getLHS());
+                        Instruction instruction2 = Instruction.createMul(instruction.getResult(), instruction1.getResult(), instruction.getRHS());
+                        instructionList.add(instruction1);
+                        instructionList.add(instruction2);
+                        assemblyMap.setCnt(assemblyMap.getCnt() + 1);
+                    } else if (instruction.getRHS().isImmediate()) {
+                        Instruction instruction1 = Instruction.createMov(instruction.getResult(), instruction.getRHS());
+                        Instruction instruction2 = Instruction.createMul(instruction1.getResult(), instruction.getLHS(), instruction1.getResult());
+                        instructionList.add(instruction1);
+                        instructionList.add(instruction2);
+                        assemblyMap.setCnt(assemblyMap.getCnt() + 1);
+                    } else {
+                        instructionList.add(instruction);
+                    }
+                }
                 case ADD -> {
                     if (instruction.getLHS().isImmediate() && instruction.getRHS().isImmediate()) {
                         int LHS = Integer.parseInt(instruction.getLHS().toString());
@@ -138,48 +157,22 @@ public class AssemblyGenerator {
                         Instruction instruction2 = Instruction.createSub(instruction.getResult(), instruction1.getResult(), instruction.getRHS());
                         instructionList.add(instruction1);
                         instructionList.add(instruction2);
-
                         assemblyMap.setCnt(assemblyMap.getCnt() + 1);
                     } else if (instruction.getRHS().isImmediate()) {
                         Instruction instruction1 = Instruction.createMov(instruction.getResult(), instruction.getRHS());
                         Instruction instruction2 = Instruction.createSub(instruction1.getResult(), instruction.getLHS(), instruction1.getResult());
                         instructionList.add(instruction1);
                         instructionList.add(instruction2);
-
                         assemblyMap.setCnt(assemblyMap.getCnt() + 1);
                     } else {
                         instructionList.add(instruction);
                     }
                 }
-                case MUL -> {
-                    if (instruction.getLHS().isImmediate() && instruction.getRHS().isImmediate()) {
-                        int LHS = Integer.parseInt(instruction.getLHS().toString());
-                        int RHS = Integer.parseInt(instruction.getRHS().toString());
-                        instructionList.add(Instruction.createMov(instruction.getResult(), IRImmediate.of(LHS * RHS)));
-                    } else if (instruction.getLHS().isImmediate()) {
-                        Instruction instruction1 = Instruction.createMov(instruction.getResult(), instruction.getLHS());
-                        Instruction instruction2 = Instruction.createMul(instruction.getResult(), instruction1.getResult(), instruction.getRHS());
-                        instructionList.add(instruction1);
-                        instructionList.add(instruction2);
 
-                        assemblyMap.setCnt(assemblyMap.getCnt() + 1);
-                    } else if (instruction.getRHS().isImmediate()) {
-                        Instruction instruction1 = Instruction.createMov(instruction.getResult(), instruction.getRHS());
-                        Instruction instruction2 = Instruction.createMul(instruction1.getResult(), instruction.getLHS(), instruction1.getResult());
-                        instructionList.add(instruction1);
-                        instructionList.add(instruction2);
-
-                        assemblyMap.setCnt(assemblyMap.getCnt() + 1);
-                    } else {
-                        instructionList.add(instruction);
-                    }
-                }
             }
             assemblyMap.setCnt(assemblyMap.getCnt() + 1);
         }
-
         generate();
-
     }
 
 
